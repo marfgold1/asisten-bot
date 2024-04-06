@@ -1,7 +1,13 @@
 {
   "name": "line-info-bot",
   "module": "src/server.ts",
+  "main": "src/server.ts",
   "type": "module",
+  "scripts": {
+    "dev": "bun --hot ./src/server.ts",
+    "build": "bun build ./src/server.ts --outdir ./dist --target=bun",
+    "start": "bun ./dist/server.js"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
