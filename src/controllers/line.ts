@@ -1,14 +1,25 @@
 import { middleware, type WebhookEvent } from '@line/bot-sdk';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { db } from '../database';
 import { messagingApi } from '@line/bot-sdk';
+import { defaultMessages, specialMessages } from './messages';
+import { group } from '../repository/group';
 
 const lineClientConfig = {
     channelAccessToken: Bun.env.CHANNEL_ACCESS_TOKEN as string,
     channelSecret: Bun.env.CHANNEL_SECRET as string,
 };
-export const lineClient = new messagingApi.MessagingApiClient(lineClientConfig);
+const lineClient = new messagingApi.MessagingApiClient(lineClientConfig);
 export const lineMiddleware = middleware(lineClientConfig);
+
+export const client = {
+  replyText: (replyToken: string, message: string) => {
+    lineClient.replyMessage({
+        replyToken,
+        messages: [{ type: 'text', text: message.trim() }]
+    });
+  },
+  pushMessage: lineClient.pushMessage,
+}
 
 export const lineWebhookHandler = async (request: FastifyRequest<{
   Body: {
@@ -19,22 +30,46 @@ export const lineWebhookHandler = async (request: FastifyRequest<{
   
   for (const event of events) {
     if (event.type === 'join' && event.source.type === 'group') {
-      console.log(event);
+      client.replyText(event.replyToken, specialMessages.join);
+    } else if (event.type === 'message' && event.source.type === 'group' && event.message.type === 'text' && event.message.text.startsWith('as!')) {
+      const splitCmd = event.message.text.replaceAll(/\s+/g, ' ').split(' ');
+      const [_, cmd, ...args] = splitCmd;
+      if (splitCmd.length < 2) {
+        client.replyText(event.replyToken, specialMessages.unknown);
+        return;
+      };
+      console.log(splitCmd);
       const groupId = event.source.groupId;
-      const stmt = db.query('INSERT OR IGNORE INTO lineGroups (group_id) VALUES ($groupId)');
-      stmt.run({ $groupId: groupId });
-      lineClient.replyMessage({
-        replyToken: event.replyToken,
-        messages: [{
-          type: 'text',
-          text: 'Informasi asistensi dan QnA akan dibroadcast di sini.'
-        }]
-      });
+      switch (cmd) {
+        case 'reg':
+        case 'unreg':
+          const action = { reg: group.addChannel.bind(group), unreg: group.removeChannel.bind(group) };
+          if (splitCmd.length !== 3) {
+            client.replyText(event.replyToken, specialMessages[cmd].Usage);
+            break;
+          }
+          const channel = args[0];
+          const isSuccess = await action[cmd](groupId, channel);
+          if (isSuccess) {
+            client.replyText(event.replyToken, specialMessages[cmd].Success(channel));
+          } else {
+            client.replyText(event.replyToken, specialMessages[cmd].Failed(channel));
+          }
+          break;
+        case 'list':
+          client.replyText(
+            event.replyToken, specialMessages.list(
+              group.getChannels(groupId).map(c => c.channel)
+            )
+          );
+          break;
+        default:
+          client.replyText(event.replyToken,
+            defaultMessages[splitCmd[1]] || specialMessages.unknown
+          );
+      }
     } else if (event.type === 'leave' && event.source.type === 'group') {
-      console.log(event);
-      const groupId = event.source.groupId;
-      const stmt = db.query('DELETE FROM lineGroups WHERE group_id = $groupId');
-      stmt.run({ $groupId: groupId });
+      group.delete(event.source.groupId);
     }
   }
 

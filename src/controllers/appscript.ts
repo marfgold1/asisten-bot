@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { db } from "../database";
-import { lineClient } from "./line";
+import { client } from "./line";
+import { group } from "../repository/group";
 
 export const appscriptWebhookHandler = async (request: FastifyRequest<{
     Body: {
@@ -11,17 +11,17 @@ export const appscriptWebhookHandler = async (request: FastifyRequest<{
         content: string;
         isContinuation: boolean;
         link: string;
+        channel: string
     }
 }>, reply: FastifyReply) => {
     console.log(request.body);
-    const { nomor, range: [_, c], from, title, content, link } = request.body;
+    const { nomor, range: [_, c], from, title, content, link, channel } = request.body;
 
-    const stmt = db.query('SELECT group_id FROM lineGroups')
-    const res = stmt.all() as {group_id: string}[];
+    const res = group.getFromChannel(channel);
 
     const send = await Promise.allSettled(res.map(async (row) => {
         const groupId = row.group_id;
-        await lineClient.pushMessage({
+        await client.pushMessage({
             to: groupId,
             messages: [{
                 type: 'flex',
