@@ -8,17 +8,16 @@ const lineClientConfig = {
     channelAccessToken: Bun.env.CHANNEL_ACCESS_TOKEN as string,
     channelSecret: Bun.env.CHANNEL_SECRET as string,
 };
-const lineClient = new messagingApi.MessagingApiClient(lineClientConfig);
+export const lineClient = new messagingApi.MessagingApiClient(lineClientConfig);
 export const lineMiddleware = middleware(lineClientConfig);
 
-export const client = {
-  replyText: (replyToken: string, message: string) => {
+const text = {
+  reply: (replyToken: string, message: string) => {
     lineClient.replyMessage({
         replyToken,
         messages: [{ type: 'text', text: message.trim() }]
     });
   },
-  pushMessage: lineClient.pushMessage,
 }
 
 export const lineWebhookHandler = async (request: FastifyRequest<{
@@ -30,12 +29,12 @@ export const lineWebhookHandler = async (request: FastifyRequest<{
   
   for (const event of events) {
     if (event.type === 'join' && event.source.type === 'group') {
-      client.replyText(event.replyToken, specialMessages.join);
+      text.reply(event.replyToken, specialMessages.join);
     } else if (event.type === 'message' && event.source.type === 'group' && event.message.type === 'text' && event.message.text.startsWith('as!')) {
       const splitCmd = event.message.text.replaceAll(/\s+/g, ' ').split(' ');
       const [_, cmd, ...args] = splitCmd;
       if (splitCmd.length < 2) {
-        client.replyText(event.replyToken, specialMessages.unknown);
+        text.reply(event.replyToken, specialMessages.unknown);
         return;
       };
       console.log(splitCmd);
@@ -45,26 +44,26 @@ export const lineWebhookHandler = async (request: FastifyRequest<{
         case 'unreg':
           const action = { reg: group.addChannel.bind(group), unreg: group.removeChannel.bind(group) };
           if (splitCmd.length !== 3) {
-            client.replyText(event.replyToken, specialMessages[cmd].Usage);
+            text.reply(event.replyToken, specialMessages[cmd].Usage);
             break;
           }
           const channel = args[0];
           const isSuccess = await action[cmd](groupId, channel);
           if (isSuccess) {
-            client.replyText(event.replyToken, specialMessages[cmd].Success(channel));
+            text.reply(event.replyToken, specialMessages[cmd].Success(channel));
           } else {
-            client.replyText(event.replyToken, specialMessages[cmd].Failed(channel));
+            text.reply(event.replyToken, specialMessages[cmd].Failed(channel));
           }
           break;
         case 'list':
-          client.replyText(
+          text.reply(
             event.replyToken, specialMessages.list(
               group.getChannels(groupId).map(c => c.channel)
             )
           );
           break;
         default:
-          client.replyText(event.replyToken,
+          text.reply(event.replyToken,
             defaultMessages[splitCmd[1]] || specialMessages.unknown
           );
       }

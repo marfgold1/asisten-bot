@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { client } from "./line";
+import { lineClient } from "./line";
 import { group } from "../repository/group";
 
 export const appscriptWebhookHandler = async (request: FastifyRequest<{
@@ -18,10 +18,11 @@ export const appscriptWebhookHandler = async (request: FastifyRequest<{
     const { nomor, range: [_, c], from, title, content, link, channel } = request.body;
 
     const res = group.getFromChannel(channel);
+    console.log("will send to:", res);
 
     const send = await Promise.allSettled(res.map(async (row) => {
         const groupId = row.group_id;
-        await client.pushMessage({
+        await lineClient.pushMessage({
             to: groupId,
             messages: [{
                 type: 'flex',
@@ -38,6 +39,7 @@ export const appscriptWebhookHandler = async (request: FastifyRequest<{
                             weight: 'bold',
                             align: 'center',
                             size: 'lg',
+                            wrap: true,
                         }]
                     },
                     body: {
